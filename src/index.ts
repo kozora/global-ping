@@ -171,6 +171,8 @@ interface CheckResult {
   locationName: string
   locationInfo?: string
   content?: string
+  contentType?: string
+  contentLength?: number
 }
 
 function getHomePage(): string {
@@ -735,18 +737,19 @@ function getHomePage(): string {
         }
 
         .content-preview {
-            max-height: 100px;
+            max-height: 120px;
             overflow-y: auto;
             background: rgba(20, 20, 35, 0.5);
             border-radius: 6px;
-            padding: 8px;
+            padding: 10px;
             font-family: 'Courier New', monospace;
             font-size: 0.8rem;
-            line-height: 1.4;
+            line-height: 1.5;
             white-space: pre-wrap;
-            word-break: break-all;
+            word-break: break-word;
             border: 1px solid rgba(81, 81, 120, 0.2);
-            color: var(--text-tertiary);
+            color: var(--text-secondary);
+            margin-top: 5px;
         }
 
         .content-preview::-webkit-scrollbar {
@@ -1199,9 +1202,15 @@ function getHomePage(): string {
                             <div class="region-detail-label">数据中心</div>
                             <div class="region-detail-value">\${result.location} \${result.locationInfo || ''}</div>
                         </div>
+                        \${result.contentType ? \`
+                        <div class="region-detail">
+                            <div class="region-detail-label">内容类型</div>
+                            <div class="region-detail-value">\${result.contentType}\${result.contentLength ? \` (\${result.contentLength} 字节)\` : ''}</div>
+                        </div>
+                        \` : ''}
                         \${result.content ? \`
                         <div class="region-detail">
-                            <div class="region-detail-label">返回内容</div>
+                            <div class="region-detail-label">响应内容</div>
                             <div class="region-detail-value content-preview">\${result.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                         </div>
                         \` : ''}
@@ -1357,14 +1366,38 @@ export class WebsiteChecker extends DurableObject {
 
       const responseTime = Date.now() - startTime
 
-      // 获取响应内容（限制大小以避免内存问题）
+      // 获取响应头信息
+      const contentType = response.headers.get('content-type') || '未知'
+      const contentLength = parseInt(response.headers.get('content-length') || '0')
+
+      // 获取并处理响应内容
       let content = ''
       try {
         const responseText = await response.text()
-        // 限制内容长度为前1000个字符
-        content = responseText.length > 1000 
-          ? responseText.substring(0, 1000) + '...' 
-          : responseText
+        
+        // 根据内容类型处理响应内容
+        if (contentType.includes('text/html')) {
+          // 对于HTML，提取一些关键信息
+          content = this.extractHtmlInfo(responseText)
+        } else if (contentType.includes('application/json')) {
+          // 对于JSON，格式化显示
+          try {
+            const jsonObj = JSON.parse(responseText)
+            content = JSON.stringify(jsonObj, null, 2)
+          } catch {
+            content = responseText
+          }
+        } else {
+          // 其他类型直接显示（限制长度）
+          content = responseText.length > 500 
+            ? responseText.substring(0, 500) + '...' 
+            : responseText
+        }
+        
+        // 最终长度限制
+        if (content.length > 1000) {
+          content = content.substring(0, 1000) + '...'
+        }
       } catch (error) {
         content = '无法读取响应内容: ' + (error as Error).message
       }
@@ -1380,7 +1413,9 @@ export class WebsiteChecker extends DurableObject {
         locationCode,
         locationName,
         locationInfo,
-        content
+        content,
+        contentType,
+        contentLength
       }
 
     } catch (error) {
@@ -1399,7 +1434,10 @@ export class WebsiteChecker extends DurableObject {
         location,
         locationCode,
         locationName,
-        locationInfo
+        locationInfo,
+        content: '请求失败，无法获取内容',
+        contentType: '未知',
+        contentLength: 0
       }
     }
   }
@@ -1424,5 +1462,56 @@ export class WebsiteChecker extends DurableObject {
   // 获取数据中心的中文位置信息
   private getLocationInfo(coloCode: string): string {
     return CF_COLO_LOCATIONS[coloCode] || '未知位置'
+  }
+
+  // 从HTML中提取关键信息
+  private extractHtmlInfo(html: string): string {
+    let info = []
+    
+    // 提取标题
+    const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i)
+    if (titleMatch) {
+      info.push(`标题: ${titleMatch[1].trim()}`)
+    }
+    
+    // 提取meta描述
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*?)["']/i)
+    if (descMatch) {
+      info.push(`描述: ${descMatch[1].trim()}`)
+    }
+    
+    // 提取meta关键词
+    const keywordsMatch = html.match(/<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']*?)["']/i)
+    if (keywordsMatch) {
+      info.push(`关键词: ${keywordsMatch[1].trim()}`)
+    }
+    
+    // 提取charset
+    const charsetMatch = html.match(/<meta[^>]*charset=["']?([^"'\s>]+)/i)
+    if (charsetMatch) {
+      info.push(`编码: ${charsetMatch[1]}`)
+    }
+    
+    // 提取viewport
+    const viewportMatch = html.match(/<meta[^>]*name=["']viewport["'][^>]*content=["']([^"']*?)["']/i)
+    if (viewportMatch) {
+      info.push(`视口: ${viewportMatch[1].trim()}`)
+    }
+    
+    // 如果没有提取到任何信息，显示HTML大小
+    if (info.length === 0) {
+      info.push(`HTML文档 (${html.length} 字符)`)
+      // 提取body标签中的前100个可见字符
+      const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is)
+      if (bodyMatch) {
+        const bodyContent = bodyMatch[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        if (bodyContent.length > 0) {
+          const preview = bodyContent.length > 100 ? bodyContent.substring(0, 100) + '...' : bodyContent
+          info.push(`内容预览: ${preview}`)
+        }
+      }
+    }
+    
+    return info.join('\n')
   }
 }
