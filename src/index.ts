@@ -1211,7 +1211,7 @@ function getHomePage(): string {
                         \${result.content ? \`
                         <div class="region-detail">
                             <div class="region-detail-label">响应内容</div>
-                            <div class="region-detail-value content-preview">\${result.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                            <div class="region-detail-value content-preview">\${result.content.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>')}</div>
                         </div>
                         \` : ''}
                         \${result.error ? \`
@@ -1370,16 +1370,13 @@ export class WebsiteChecker extends DurableObject {
       const contentType = response.headers.get('content-type') || '未知'
       const contentLength = parseInt(response.headers.get('content-length') || '0')
 
-      // 获取并处理响应内容
+      // 获取响应内容
       let content = ''
       try {
         const responseText = await response.text()
         
         // 根据内容类型处理响应内容
-        if (contentType.includes('text/html')) {
-          // 对于HTML，提取一些关键信息
-          content = this.extractHtmlInfo(responseText)
-        } else if (contentType.includes('application/json')) {
+        if (contentType.includes('application/json')) {
           // 对于JSON，格式化显示
           try {
             const jsonObj = JSON.parse(responseText)
@@ -1387,16 +1384,26 @@ export class WebsiteChecker extends DurableObject {
           } catch {
             content = responseText
           }
+        } else if (contentType.includes('text/html')) {
+          // 对于HTML，如果内容很短（可能是简单响应），直接显示；否则提取关键信息
+          if (responseText.length <= 200) {
+            content = responseText.trim()
+          } else {
+            content = this.extractHtmlInfo(responseText)
+          }
         } else {
-          // 其他类型直接显示（限制长度）
-          content = responseText.length > 500 
-            ? responseText.substring(0, 500) + '...' 
-            : responseText
+          // 其他类型（包括纯文本）直接显示原始内容
+          content = responseText.trim()
         }
         
         // 最终长度限制
         if (content.length > 1000) {
           content = content.substring(0, 1000) + '...'
+        }
+        
+        // 如果内容为空，显示提示
+        if (!content) {
+          content = '响应内容为空'
         }
       } catch (error) {
         content = '无法读取响应内容: ' + (error as Error).message
@@ -1468,47 +1475,53 @@ export class WebsiteChecker extends DurableObject {
   private extractHtmlInfo(html: string): string {
     let info = []
     
+    // 首先尝试提取body中的纯文本内容
+    const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is)
+    if (bodyMatch) {
+      const bodyContent = bodyMatch[1]
+        .replace(/<script[^>]*>.*?<\/script>/gis, '') // 移除script标签
+        .replace(/<style[^>]*>.*?<\/style>/gis, '') // 移除style标签
+        .replace(/<[^>]*>/g, ' ') // 移除所有HTML标签
+        .replace(/\s+/g, ' ') // 合并多个空白字符
+        .trim()
+      
+      if (bodyContent.length > 0) {
+        // 如果body内容较短，直接显示
+        if (bodyContent.length <= 300) {
+          return bodyContent
+        } else {
+          info.push(`页面内容: ${bodyContent.substring(0, 200)}...`)
+        }
+      }
+    }
+    
     // 提取标题
     const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i)
-    if (titleMatch) {
-      info.push(`标题: ${titleMatch[1].trim()}`)
+    if (titleMatch && titleMatch[1].trim()) {
+      info.unshift(`标题: ${titleMatch[1].trim()}`) // 使用unshift将标题放在最前面
     }
     
     // 提取meta描述
     const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*?)["']/i)
-    if (descMatch) {
+    if (descMatch && descMatch[1].trim()) {
       info.push(`描述: ${descMatch[1].trim()}`)
     }
     
-    // 提取meta关键词
-    const keywordsMatch = html.match(/<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']*?)["']/i)
-    if (keywordsMatch) {
-      info.push(`关键词: ${keywordsMatch[1].trim()}`)
-    }
-    
-    // 提取charset
-    const charsetMatch = html.match(/<meta[^>]*charset=["']?([^"'\s>]+)/i)
-    if (charsetMatch) {
-      info.push(`编码: ${charsetMatch[1]}`)
-    }
-    
-    // 提取viewport
-    const viewportMatch = html.match(/<meta[^>]*name=["']viewport["'][^>]*content=["']([^"']*?)["']/i)
-    if (viewportMatch) {
-      info.push(`视口: ${viewportMatch[1].trim()}`)
-    }
-    
-    // 如果没有提取到任何信息，显示HTML大小
+    // 如果没有提取到任何有用信息，显示HTML大小和简单预览
     if (info.length === 0) {
-      info.push(`HTML文档 (${html.length} 字符)`)
-      // 提取body标签中的前100个可见字符
-      const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is)
-      if (bodyMatch) {
-        const bodyContent = bodyMatch[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-        if (bodyContent.length > 0) {
-          const preview = bodyContent.length > 100 ? bodyContent.substring(0, 100) + '...' : bodyContent
-          info.push(`内容预览: ${preview}`)
-        }
+      // 尝试提取任何可见文本
+      const textContent = html
+        .replace(/<script[^>]*>.*?<\/script>/gis, '')
+        .replace(/<style[^>]*>.*?<\/style>/gis, '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      
+      if (textContent.length > 0) {
+        const preview = textContent.length > 200 ? textContent.substring(0, 200) + '...' : textContent
+        info.push(`页面内容: ${preview}`)
+      } else {
+        info.push(`HTML文档 (${html.length} 字符，无可见文本内容)`)
       }
     }
     
