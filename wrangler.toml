@@ -1,0 +1,11 @@
+name = "global-ping"
+main = "src/index.ts"
+compatibility_date = "2025-07-10"
+
+[[durable_objects.bindings]]
+name = "WEBSITE_CHECKER"
+class_name = "WebsiteChecker"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WebsiteChecker"]
