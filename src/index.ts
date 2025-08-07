@@ -431,6 +431,33 @@ function getHomePage(): string {
             cursor: pointer;
         }
 
+        .all-datacenters-option {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 12px;
+            background: rgba(71, 118, 230, 0.1);
+            border: 1px solid rgba(71, 118, 230, 0.3);
+        }
+
+        .all-datacenters-option .region-option {
+            margin-bottom: 10px;
+            border: none;
+            background: transparent;
+            padding: 0;
+        }
+
+        .all-datacenters-option label {
+            font-weight: 500;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .all-datacenters-warning {
+            color: var(--text-tertiary);
+            font-style: italic;
+            margin-left: 24px;
+        }
+
         .button {
             padding: 12px 30px;
             border-radius: 12px;
@@ -893,6 +920,17 @@ function getHomePage(): string {
                         <span id="regionToggleText">全选</span>
                     </div>
                 </div>
+                
+                <div class="all-datacenters-option">
+                    <div class="region-option" id="allDatacentersOption">
+                        <input type="checkbox" id="allDatacenters" value="all">
+                        <label for="allDatacenters">🌐 测试所有数据中心 (约140+个)</label>
+                    </div>
+                    <div class="all-datacenters-warning">
+                        <small>⚠️ 此选项将测试所有Cloudflare数据中心，可能需要较长时间</small>
+                    </div>
+                </div>
+                
                 <div class="region-options" id="regionOptions">
                     <!-- 地区选项将通过 JavaScript 动态生成 -->
                 </div>
@@ -939,6 +977,7 @@ function getHomePage(): string {
         // 初始化页面
         document.addEventListener('DOMContentLoaded', function() {
             initRegionSelector();
+            initAllDatacentersOption();
             
             // 支持回车键提交
             document.getElementById('urlInput').addEventListener('keypress', function(e) {
@@ -1024,8 +1063,52 @@ function getHomePage(): string {
             updateToggleText();
         }
         
+        // 初始化所有数据中心选项
+        function initAllDatacentersOption() {
+            const allDatacentersCheckbox = document.getElementById('allDatacenters');
+            const regionOptions = document.getElementById('regionOptions');
+            const allDatacentersOption = document.getElementById('allDatacentersOption');
+            
+            // 添加点击事件
+            allDatacentersOption.addEventListener('click', function(e) {
+                const checkbox = this.querySelector('input');
+                if (e.target !== checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    this.classList.toggle('selected', checkbox.checked);
+                    handleAllDatacentersChange(checkbox.checked);
+                }
+            });
+            
+            allDatacentersCheckbox.addEventListener('change', function() {
+                this.parentElement.classList.toggle('selected', this.checked);
+                handleAllDatacentersChange(this.checked);
+            });
+            
+            function handleAllDatacentersChange(isChecked) {
+                if (isChecked) {
+                    // 如果选择了所有数据中心，禁用地区选择
+                    regionOptions.style.opacity = '0.5';
+                    regionOptions.style.pointerEvents = 'none';
+                    const regionCheckboxes = regionOptions.querySelectorAll('input[type="checkbox"]');
+                    regionCheckboxes.forEach(cb => {
+                        cb.checked = false;
+                        cb.parentElement.classList.remove('selected');
+                    });
+                } else {
+                    // 恢复地区选择
+                    regionOptions.style.opacity = '1';
+                    regionOptions.style.pointerEvents = 'auto';
+                }
+            }
+        }
+        
         // 获取选中的地区
         function getSelectedRegions() {
+            const allDatacentersCheckbox = document.getElementById('allDatacenters');
+            if (allDatacentersCheckbox.checked) {
+                return ['all']; // 特殊标识，表示选择所有数据中心
+            }
+            
             const checkboxes = document.querySelectorAll('#regionOptions input[type="checkbox"]:checked');
             return Array.from(checkboxes).map(cb => cb.value);
         }
@@ -1052,8 +1135,17 @@ function getHomePage(): string {
             }
             
             // 显示加载状态
+            const isAllDatacenters = selectedRegions.includes('all');
+            const loadingText = isAllDatacenters ? '正在从全球140+个数据中心检测中...' : '检测中...';
+            const loadingSubtext = isAllDatacenters ? '正在测试所有Cloudflare数据中心，这可能需要较长时间，请耐心等待' : '这可能需要几秒钟时间，请耐心等待';
+            
             checkButton.disabled = true;
-            checkButton.innerHTML = '<div class="button-content"><div class="loader"></div><span>检测中...</span></div>';
+            checkButton.innerHTML = \`<div class="button-content"><div class="loader"></div><span>\${loadingText}</span></div>\`;
+            
+            // 更新加载容器的文本
+            document.querySelector('.loading-text').textContent = loadingText;
+            document.querySelector('.loading-subtext').textContent = loadingSubtext;
+            
             loadingContainer.classList.remove('hidden');
             errorContainer.classList.add('hidden');
             resultContainer.innerHTML = '';
@@ -1178,8 +1270,35 @@ function getHomePage(): string {
                     <div class="region-cards">
             \`;
             
+            // 处理结果排序和限制显示
+            let resultsToShow = [...data.results];
+            let showingAllResults = true;
+            
+            // 如果结果太多，按成功率和响应时间排序，只显示前30个
+            if (resultsToShow.length > 30) {
+                resultsToShow.sort((a, b) => {
+                    // 先按成功状态排序，成功的在前
+                    if (a.success !== b.success) {
+                        return b.success ? 1 : -1;
+                    }
+                    // 再按响应时间排序，快的在前
+                    return a.responseTime - b.responseTime;
+                });
+                resultsToShow = resultsToShow.slice(0, 30);
+                showingAllResults = false;
+            }
+            
+            // 添加结果说明（如果有限制显示）
+            if (!showingAllResults) {
+                resultHTML += \`
+                    <div style="text-align: center; margin-bottom: 20px; color: var(--text-tertiary); font-style: italic;">
+                        显示前30个结果（按成功率和响应时间排序），共检测了 \${data.results.length} 个数据中心
+                    </div>
+                \`;
+            }
+            
             // 添加每个地区的结果卡片
-            data.results.forEach(result => {
+            resultsToShow.forEach(result => {
                 const statusClass = result.success ? 'status-success' : 'status-error';
                 const statusText = result.success ? '成功' : '失败';
                 const regionClass = result.success ? 'region-success' : 'region-error';
@@ -1258,7 +1377,7 @@ export default {
       try {
         const { targetUrl, selectedRegions } = await request.json() as {
           targetUrl: string,
-          selectedRegions?: LocationCode[]
+          selectedRegions?: (LocationCode | 'all')[]
         }
 
         if (!targetUrl) {
@@ -1269,9 +1388,18 @@ export default {
         }
 
         // 确定要检测的区域
-        const regionsToCheck = selectedRegions && selectedRegions.length > 0
-          ? SUPPORTED_LOCATIONS.filter(loc => selectedRegions.includes(loc.code))
-          : SUPPORTED_LOCATIONS
+        let regionsToCheck
+        if (selectedRegions && selectedRegions.includes('all')) {
+          // 如果选择了所有数据中心，创建所有数据中心的位置列表
+          regionsToCheck = Object.keys(CF_COLO_LOCATIONS).map(coloCode => ({
+            code: coloCode,
+            name: CF_COLO_LOCATIONS[coloCode]
+          }))
+        } else {
+          regionsToCheck = selectedRegions && selectedRegions.length > 0
+            ? SUPPORTED_LOCATIONS.filter(loc => selectedRegions.includes(loc.code))
+            : SUPPORTED_LOCATIONS
+        }
 
         // 从选定位置进行检测
         const checkPromises = regionsToCheck.map(async (location) => {
