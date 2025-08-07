@@ -1340,7 +1340,9 @@ export class WebsiteChecker extends DurableObject {
       // 获取响应内容的前100字节作为预览
       let contentPreview = ''
       try {
-        const text = await response.text()
+        // 克隆响应以便可以多次读取
+        const responseClone = response.clone()
+        const text = await responseClone.text()
         contentPreview = text.slice(0, 100)
       } catch (error) {
         contentPreview = '无法获取内容预览'
