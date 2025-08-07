@@ -170,7 +170,7 @@ interface CheckResult {
   locationCode: string
   locationName: string
   locationInfo?: string
-  responseContent?: string // 添加响应内容字段
+  contentPreview?: string
 }
 
 function getHomePage(): string {
@@ -716,34 +716,6 @@ function getHomePage(): string {
             color: var(--text-secondary);
         }
 
-        .response-content {
-            font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            background: rgba(20, 20, 35, 0.5);
-            padding: 8px;
-            border-radius: 6px;
-            border-left: 3px solid var(--primary-gradient);
-            white-space: pre-wrap;
-            word-break: break-all;
-            max-height: 80px;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(71, 118, 230, 0.5) transparent;
-        }
-
-        .response-content::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .response-content::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .response-content::-webkit-scrollbar-thumb {
-            background: rgba(71, 118, 230, 0.5);
-            border-radius: 2px;
-        }
-
         .status-badge {
             display: inline-block;
             padding: 3px 8px;
@@ -822,6 +794,19 @@ function getHomePage(): string {
 
         .hidden {
             display: none;
+        }
+
+        .content-preview {
+            background: rgba(20, 20, 35, 0.5);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            max-height: 100px;
+            overflow-y: auto;
+            word-break: break-all;
         }
 
         @media (max-width: 768px) {
@@ -1194,18 +1179,12 @@ function getHomePage(): string {
                             <div class="region-detail-label">数据中心</div>
                             <div class="region-detail-value">\${result.location} \${result.locationInfo || ''}</div>
                         </div>
-                        ${result.responseContent ? `
-                        <div class="region-detail">
-                            <div class="region-detail-label">响应内容</div>
-                            <div class="region-detail-value response-content">${result.responseContent}</div>
-                        </div>
-                        ` : ''}
-                        ${result.error ? `
+                        \${result.error ? \`
                         <div class="region-detail">
                             <div class="region-detail-label">错误</div>
-                            <div class="region-detail-value">${result.error}</div>
+                            <div class="region-detail-value">\${result.error}</div>
                         </div>
-                        ` : ''}
+                        \` : ''}
                     </div>
                 \`;
             });
@@ -1351,15 +1330,6 @@ export class WebsiteChecker extends DurableObject {
       })
 
       const responseTime = Date.now() - startTime
-      
-      // 获取响应内容的前200个字节
-      let responseContent = ''
-      try {
-        const contentText = await response.text()
-        responseContent = contentText.substring(0, 200)
-      } catch (error) {
-        responseContent = '无法获取响应内容'
-      }
 
       return {
         url: targetUrl,
@@ -1371,8 +1341,7 @@ export class WebsiteChecker extends DurableObject {
         location,
         locationCode,
         locationName,
-        locationInfo,
-        responseContent
+        locationInfo
       }
 
     } catch (error) {
