@@ -1194,18 +1194,18 @@ function getHomePage(): string {
                             <div class="region-detail-label">数据中心</div>
                             <div class="region-detail-value">\${result.location} \${result.locationInfo || ''}</div>
                         </div>
-                        \${result.responseContent ? \`
+                        ${result.responseContent ? `
                         <div class="region-detail">
                             <div class="region-detail-label">响应内容</div>
-                            <div class="region-detail-value response-content">\${result.responseContent}</div>
+                            <div class="region-detail-value response-content">${result.responseContent}</div>
                         </div>
-                        \` : ''}
-                        \${result.error ? \`
+                        ` : ''}
+                        ${result.error ? `
                         <div class="region-detail">
                             <div class="region-detail-label">错误</div>
-                            <div class="region-detail-value">\${result.error}</div>
+                            <div class="region-detail-value">${result.error}</div>
                         </div>
-                        \` : ''}
+                        ` : ''}
                     </div>
                 \`;
             });
