@@ -170,7 +170,7 @@ interface CheckResult {
   locationCode: string
   locationName: string
   locationInfo?: string
-  contentPreview?: string
+  content?: string
 }
 
 function getHomePage(): string {
@@ -734,6 +734,39 @@ function getHomePage(): string {
             color: #f5576c;
         }
 
+        .content-preview {
+            max-height: 100px;
+            overflow-y: auto;
+            background: rgba(20, 20, 35, 0.5);
+            border-radius: 6px;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-all;
+            border: 1px solid rgba(81, 81, 120, 0.2);
+            color: var(--text-tertiary);
+        }
+
+        .content-preview::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .content-preview::-webkit-scrollbar-track {
+            background: rgba(20, 20, 35, 0.5);
+            border-radius: 2px;
+        }
+
+        .content-preview::-webkit-scrollbar-thumb {
+            background: rgba(81, 81, 120, 0.5);
+            border-radius: 2px;
+        }
+
+        .content-preview::-webkit-scrollbar-thumb:hover {
+            background: rgba(81, 81, 120, 0.7);
+        }
+
         .loading-container {
             display: flex;
             flex-direction: column;
@@ -794,19 +827,6 @@ function getHomePage(): string {
 
         .hidden {
             display: none;
-        }
-
-        .content-preview {
-            background: rgba(20, 20, 35, 0.5);
-            border-radius: 8px;
-            padding: 10px;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            max-height: 100px;
-            overflow-y: auto;
-            word-break: break-all;
         }
 
         @media (max-width: 768px) {
@@ -1179,16 +1199,16 @@ function getHomePage(): string {
                             <div class="region-detail-label">数据中心</div>
                             <div class="region-detail-value">\${result.location} \${result.locationInfo || ''}</div>
                         </div>
+                        \${result.content ? \`
+                        <div class="region-detail">
+                            <div class="region-detail-label">返回内容</div>
+                            <div class="region-detail-value content-preview">\${result.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                        </div>
+                        \` : ''}
                         \${result.error ? \`
                         <div class="region-detail">
                             <div class="region-detail-label">错误</div>
                             <div class="region-detail-value">\${result.error}</div>
-                        </div>
-                        \` : ''}
-                        \${result.contentPreview && result.success ? \`
-                        <div class="region-detail">
-                            <div class="region-detail-label">内容预览</div>
-                            <div class="content-preview">\${result.contentPreview}</div>
                         </div>
                         \` : ''}
                     </div>
@@ -1337,15 +1357,16 @@ export class WebsiteChecker extends DurableObject {
 
       const responseTime = Date.now() - startTime
 
-      // 获取响应内容的前100字节作为预览
-      let contentPreview = ''
+      // 获取响应内容（限制大小以避免内存问题）
+      let content = ''
       try {
-        // 克隆响应以便可以多次读取
-        const responseClone = response.clone()
-        const text = await responseClone.text()
-        contentPreview = text.slice(0, 100)
+        const responseText = await response.text()
+        // 限制内容长度为前1000个字符
+        content = responseText.length > 1000 
+          ? responseText.substring(0, 1000) + '...' 
+          : responseText
       } catch (error) {
-        contentPreview = '无法获取内容预览'
+        content = '无法读取响应内容: ' + (error as Error).message
       }
 
       return {
@@ -1359,7 +1380,7 @@ export class WebsiteChecker extends DurableObject {
         locationCode,
         locationName,
         locationInfo,
-        contentPreview
+        content
       }
 
     } catch (error) {
