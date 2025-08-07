@@ -1185,6 +1185,12 @@ function getHomePage(): string {
                             <div class="region-detail-value">\${result.error}</div>
                         </div>
                         \` : ''}
+                        \${result.contentPreview && result.success ? \`
+                        <div class="region-detail">
+                            <div class="region-detail-label">内容预览</div>
+                            <div class="content-preview">\${result.contentPreview}</div>
+                        </div>
+                        \` : ''}
                     </div>
                 \`;
             });
@@ -1331,6 +1337,15 @@ export class WebsiteChecker extends DurableObject {
 
       const responseTime = Date.now() - startTime
 
+      // 获取响应内容的前100字节作为预览
+      let contentPreview = ''
+      try {
+        const text = await response.text()
+        contentPreview = text.slice(0, 100)
+      } catch (error) {
+        contentPreview = '无法获取内容预览'
+      }
+
       return {
         url: targetUrl,
         status: response.status,
@@ -1341,7 +1356,8 @@ export class WebsiteChecker extends DurableObject {
         location,
         locationCode,
         locationName,
-        locationInfo
+        locationInfo,
+        contentPreview
       }
 
     } catch (error) {
